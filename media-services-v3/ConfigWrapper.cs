@@ -61,5 +61,10 @@ namespace media_services_v3
         {
             get { return _config["Region"]; }
         }
+
+        public string StorageConnectionString
+        {
+            get { return _config["StorageConnectionString"]; }
+        }
     }
 }
