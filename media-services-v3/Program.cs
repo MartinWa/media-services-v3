@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Web;
 using media_services_v3.Common.Dto;
+using media_services_v3.Common.Enums;
 using media_services_v3.Data.AzureBlob;
 using media_services_v3.Data.AzureMediaService;
 using Microsoft.Azure.Management.Media.Models;
@@ -14,9 +15,8 @@ namespace media_services_v3
     public class Program
     {
         const string inputMP4FileName = @"ignite.mp4";
-        const string outputFolder = @"Output";
-        const string VideoAnalyzerTransformName = "VideoAnalyzerTransform";
         private const string JobIdentifier = "Encoding {0} in content id {1}";
+        const int SleepInterval = 10 * 1000;
 
         public static async Task Main()
         {
@@ -28,11 +28,10 @@ namespace media_services_v3
 
 
             // Injection mocking
-            var _mediaService = new AzureMediaService();
+            var _mediaService = new AzureMediaService(config);
             var _storage = new AzureStorage(null, new AzureBlobFactory(config.StorageConnectionString));
 
             // Example specific code
-            string filename = Path.GetFileName(inputMP4FileName);
             var fileGuid = Guid.NewGuid().ToString("N").ToLower();
             string newFileName;
             var contentDisposition = $"filename=\"{HttpUtility.UrlEncode(inputMP4FileName)}\""; // Set filename of downloaded file to original name
@@ -60,7 +59,21 @@ namespace media_services_v3
                 await blob.SetContentDispositionAsync(contentDisposition);
                 var fileUri = blob.GetReadSharedAccessUrl("1.1.1.1");
                 Console.WriteLine($"Uploaded original at {fileUri}");
-                // Later get status
+                               
+                // External API call:
+                bool exit = false;
+                do
+                {
+                    var progress = await _mediaService.GetEncodeProgressAsync(message.JobIdentifier, null);
+                    if (progress.Status == EncodeStatus.Finished)
+                    {
+                        exit = true;
+                    }
+                    Thread.Sleep(SleepInterval);
+                }
+                while (!exit);
+
+                // Azure Function call:
                 await _mediaService.FinishEncodeJobAsync(message.JobIdentifier, message.ContentId, message.NewFileName, CancellationToken.None);
 
             }
