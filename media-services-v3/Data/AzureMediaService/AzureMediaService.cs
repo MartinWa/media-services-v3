@@ -3,10 +3,10 @@ using media_services_v3.Common.Enums;
 using Microsoft.Azure.Management.Media;
 using Microsoft.Azure.Management.Media.Models;
 using Microsoft.IdentityModel.Clients.ActiveDirectory;
-using Microsoft.Rest;
 using Microsoft.Rest.Azure.Authentication;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -14,21 +14,85 @@ namespace media_services_v3.Data.AzureMediaService
 {
     class AzureMediaService : IMediaService
     {
-        ConfigWrapper _config;
+        ConfigWrapper _settings;
         private const string EncodedFileExtensionn = ".mp4";
-
-        public AzureMediaService(ConfigWrapper config)
+        public AzureMediaService(ConfigWrapper settings)
         {
-            _config = config;
+            _settings = settings;
         }
 
-        public Task<Job> CreateEncodeJobAsync(IZeroBlob original, string encodedFileName, string jobIdentifier, CancellationToken cancellationToken)
+        public async Task<Job> CreateEncodeJobAsync(IZeroBlob original, string encodedFileName, int contentId, CancellationToken cancellationToken)
         {
-            return Task.FromResult(new Job());
+            var clientCredential = new ClientCredential(_settings.AadClientId, _settings.AadSecret);
+            var credentials = await ApplicationTokenProvider.LoginSilentAsync(_settings.AadTenantId, clientCredential, ActiveDirectoryServiceSettings.Azure);
+            var client = new AzureMediaServicesClient(_settings.ArmEndpoint, credentials)
+            {
+                SubscriptionId = _settings.SubscriptionId
+            };
+            // Set the polling interval for long running operations to 2 seconds.
+            // The default value is 30 seconds for the .NET client SDK
+            client.LongRunningOperationRetryTimeout = 2;
+
+
+
+            var extension = Path.GetExtension(original.GetName());
+            if (extension == null || !_settings.SupportedVideoTypes.Contains(extension.ToLower()))
+            {
+                throw new NotSupportedException("Video type not supported");
+            }
+
+            string uniqueness = $"{contentId}-{Guid.NewGuid().ToString("N").Substring(0, 10)}";
+            string jobName = $"job-{uniqueness}";
+            string inputAssetName = $"input-{uniqueness}";
+            string outputAssetName = $"output-{uniqueness}";
+
+
+            Asset output = new Asset();
+            var outPutAsset = client.Assets.CreateOrUpdate(_settings.ResourceGroup, _settings.AccountName, outputAssetName, output);
+            JobOutput[] jobOutputs =
+                {
+                    new JobOutputAsset(outPutAsset.Name)
+                };
+
+            // TODO Move transform to ARM template
+            string transformName = "H264SingleBitrate720p";
+            Transform transform = client.Transforms.Get(_settings.ResourceGroup, _settings.AccountName, transformName);
+            if (transform == null)
+            {
+                TransformOutput[] outputs = new TransformOutput[]
+                {
+                            new TransformOutput(new BuiltInStandardEncoderPreset(EncoderNamedPreset.H264SingleBitrate720p)),
+                };
+
+                transform = client.Transforms.CreateOrUpdate(_settings.ResourceGroup, _settings.AccountName, transformName, outputs);
+            }
+            // End Move transform
+
+
+            var jobInput = new JobInputHttp
+            {
+                Files = new[] { original.GetReadSharedAccessUrl("*") },
+                Label = inputAssetName
+            };
+            IDictionary<string, string> correlationData = null; // Add custom data sent with the job. Can then be used when processing it.
+            var job = client.Jobs.Create(
+                _settings.ResourceGroup,
+                _settings.AccountName,
+                transformName,
+                jobName,
+                new Job
+                {
+                    Input = jobInput,
+                    Outputs = jobOutputs,
+                    CorrelationData = correlationData
+                });
+
+            return job;
         }
 
         public Task FinishEncodeJobAsync(string jobIdentifier, int contentId, string newFilename, CancellationToken cancellationToken)
         {
+            // TODO Cleanup Or do that in FinishEncodeJobAsync
             return Task.CompletedTask;
         }
 
@@ -125,22 +189,22 @@ namespace media_services_v3.Data.AzureMediaService
 //            };
 //        }
 
-//        private static Transform EnsureTransformExists(IAzureMediaServicesClient client, string resourceGroupName, string accountName, string transformName, Preset preset)
+//private static Transform EnsureTransformExists(IAzureMediaServicesClient client, string resourceGroupName, string accountName, string transformName, Preset preset)
+//{
+//    Transform transform = client.Transforms.Get(resourceGroupName, accountName, transformName);
+
+//    if (transform == null)
+//    {
+//        TransformOutput[] outputs = new TransformOutput[]
 //        {
-//            Transform transform = client.Transforms.Get(resourceGroupName, accountName, transformName);
-
-//            if (transform == null)
-//            {
-//                TransformOutput[] outputs = new TransformOutput[]
-//                {
 //                    new TransformOutput(preset),
-//                };
+//        };
 
-//                transform = client.Transforms.CreateOrUpdate(resourceGroupName, accountName, transformName, outputs);
-//            }
+//        transform = client.Transforms.CreateOrUpdate(resourceGroupName, accountName, transformName, outputs);
+//    }
 
-//            return transform;
-//        }
+//    return transform;
+//}
 
 //        private static async Task<Asset> CreateInputAsset(IAzureMediaServicesClient client, string resourceGroupName, string accountName, string assetName, string fileToUpload)
 //        {

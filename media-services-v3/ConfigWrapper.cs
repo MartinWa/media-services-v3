@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using Microsoft.Extensions.Configuration;
 
 namespace media_services_v3
@@ -65,6 +66,31 @@ namespace media_services_v3
         public string StorageConnectionString
         {
             get { return _config["StorageConnectionString"]; }
+        }
+
+        public List<string> SupportedVideoTypes
+        {
+            get
+            {
+                return new List<string> {
+                                          ".3gp",
+                                          ".3g2",
+                                          ".3gp2",
+                                          ".asf",
+                                          ".avi",
+                                          ".dv",
+                                          ".m2ts",
+                                          ".m2v",
+                                          ".m4a",
+                                          ".mod",
+                                          ".mov",
+                                          ".mp4",
+                                          ".mpeg",
+                                          ".mpg",
+                                          ".mts",
+                                          ".ts",
+                                          ".wmv" };
+            }
         }
     }
 }

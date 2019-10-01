@@ -7,7 +7,7 @@ namespace media_services_v3.Data
 {
     public interface IMediaService
     {
-        Task<Job> CreateEncodeJobAsync(IZeroBlob original, string encodedFileName, string jobIdentifier, CancellationToken cancellationToken);
+        Task<Job> CreateEncodeJobAsync(IZeroBlob original, string encodedFileName, int contentId, CancellationToken cancellationToken);
         Task FinishEncodeJobAsync(string jobIdentifier, int contentId, string newFilename,CancellationToken cancellationToken);
         Task<MediaEncodeProgressDto> GetEncodeProgressAsync(string jobIdentifier, IZeroBlob resultingFile);
         string EncodedFileExtension();

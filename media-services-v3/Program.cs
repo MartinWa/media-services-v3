@@ -15,7 +15,6 @@ namespace media_services_v3
     public class Program
     {
         const string inputMP4FileName = @"ignite.mp4";
-        private const string JobIdentifier = "Encoding {0} in content id {1}";
         const int SleepInterval = 10 * 1000;
 
         public static async Task Main()
@@ -47,8 +46,7 @@ namespace media_services_v3
                 await originalBlob.UploadFromStreamAsync(buffer);
                 var encodedBlob = _storage.GetContentContainer(contentId).GetContentBlob(newFileName);
                 await encodedBlob.UploadTextAsync(""); // Create empty blob
-                var jobIdentifier = string.Format(JobIdentifier, newFileName, contentId);
-                var job = await _mediaService.CreateEncodeJobAsync(originalBlob, encodedBlob.GetName(), jobIdentifier, CancellationToken.None);
+                var job = await _mediaService.CreateEncodeJobAsync(originalBlob, encodedBlob.GetName(), contentId, CancellationToken.None);
                 var message = new CompleteMediaEncodingQueueMessageDto
                 {
                     JobIdentifier = job.Id,
