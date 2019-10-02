@@ -7,6 +7,7 @@ using Microsoft.Rest.Azure.Authentication;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -16,6 +17,7 @@ namespace media_services_v3.Data.AzureMediaService
     {
         ConfigWrapper _settings;
         private const string EncodedFileExtensionn = ".mp4";
+        private const string TransformName = "H264SingleBitrate720p";
         public AzureMediaService(ConfigWrapper settings)
         {
             _settings = settings;
@@ -55,8 +57,7 @@ namespace media_services_v3.Data.AzureMediaService
                 };
 
             // TODO Move transform to ARM template
-            string transformName = "H264SingleBitrate720p";
-            Transform transform = client.Transforms.Get(_settings.ResourceGroup, _settings.AccountName, transformName);
+            Transform transform = client.Transforms.Get(_settings.ResourceGroup, _settings.AccountName, TransformName);
             if (transform == null)
             {
                 TransformOutput[] outputs = new TransformOutput[]
@@ -64,7 +65,7 @@ namespace media_services_v3.Data.AzureMediaService
                             new TransformOutput(new BuiltInStandardEncoderPreset(EncoderNamedPreset.H264SingleBitrate720p)),
                 };
 
-                transform = client.Transforms.CreateOrUpdate(_settings.ResourceGroup, _settings.AccountName, transformName, outputs);
+                transform = client.Transforms.CreateOrUpdate(_settings.ResourceGroup, _settings.AccountName, TransformName, outputs);
             }
             // End Move transform
 
@@ -78,7 +79,7 @@ namespace media_services_v3.Data.AzureMediaService
             var job = client.Jobs.Create(
                 _settings.ResourceGroup,
                 _settings.AccountName,
-                transformName,
+                TransformName,
                 jobName,
                 new Job
                 {
@@ -96,18 +97,84 @@ namespace media_services_v3.Data.AzureMediaService
             return Task.CompletedTask;
         }
 
-        public Task<MediaEncodeProgressDto> GetEncodeProgressAsync(string jobIdentifier, IZeroBlob resultingFile)
+        public async Task<MediaEncodeProgressDto> GetEncodeProgressAsync(string jobName, IZeroBlob resultingFile)
         {
-            return Task.FromResult(new MediaEncodeProgressDto
+            var clientCredential = new ClientCredential(_settings.AadClientId, _settings.AadSecret);
+            var credentials = await ApplicationTokenProvider.LoginSilentAsync(_settings.AadTenantId, clientCredential, ActiveDirectoryServiceSettings.Azure);
+            var client = new AzureMediaServicesClient(_settings.ArmEndpoint, credentials)
             {
-                Status = EncodeStatus.Processing
-            });
+                SubscriptionId = _settings.SubscriptionId
+            };
+            var job = client.Jobs.Get(_settings.ResourceGroup, _settings.AccountName, TransformName, jobName);
+            if (job == null)
+            {
+                return new MediaEncodeProgressDto
+                {
+                    Status = EncodeStatus.NotFound,
+                    ProgressPercentage = 0,
+                    Errors = "Not found"
+                };
+            }
+            var status = ConvertToEncodeStatus(job.State);
+            switch (status)
+            {
+                case EncodeStatus.Processing:
+                    var progress = job.Outputs.Average(x => x.Progress);
+                    return new MediaEncodeProgressDto
+                    {
+                        Status = status,
+                        ProgressPercentage = progress
+                    };
+                case EncodeStatus.Finished:
+                    var exists = await resultingFile.ExistsAsync();
+                    var size = await resultingFile.GetSizeAsync();
+                    if (exists && size < 1)
+                    {
+                        status = EncodeStatus.Copying;
+                    }
+                    return new MediaEncodeProgressDto
+                    {
+                        Status = status
+                    };
+                case EncodeStatus.Error:
+                    var firstOutput = job.Outputs[0];
+                    return new MediaEncodeProgressDto
+                    {
+                        Status = status,
+                        ProgressPercentage = firstOutput?.Progress ?? 0,
+                        Errors = firstOutput == null ? string.Empty : string.Concat(firstOutput.Error.Details.Select(ed => ed.Message))
+                    };
+                default:
+                    return new MediaEncodeProgressDto
+                    {
+                        Status = status
+                    };
+            }
         }
 
 
         public string EncodedFileExtension()
         {
             return EncodedFileExtensionn;
+        }
+
+        private static EncodeStatus ConvertToEncodeStatus(JobState state)
+        {
+            if (state == JobState.Queued)
+                return EncodeStatus.Queued;
+            if (state == JobState.Scheduled)
+                return EncodeStatus.Scheduled;
+            if (state == JobState.Processing)
+                return EncodeStatus.Processing;
+            if (state == JobState.Finished)
+                return EncodeStatus.Finished;
+            if (state == JobState.Error)
+                return EncodeStatus.Error;
+            if (state == JobState.Canceled)
+                return EncodeStatus.Canceled;
+            if (state == JobState.Canceling)
+                return EncodeStatus.Canceling;
+            return EncodeStatus.NotFound;
         }
     }
 }

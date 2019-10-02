@@ -15,7 +15,7 @@
     </None>
   </ItemGroup>
     <ItemGroup>
-    <Content Include="ignite.mp4">
+    <Content Include="sample.mp4">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>

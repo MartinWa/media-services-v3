@@ -14,8 +14,8 @@ namespace media_services_v3
 {
     public class Program
     {
-        const string inputMP4FileName = @"ignite.mp4";
-        const int SleepInterval = 10 * 1000;
+        const string inputMP4FileName = @"sample.mp4";
+        const int SleepInterval = 1000;
 
         public static async Task Main()
         {
@@ -49,7 +49,7 @@ namespace media_services_v3
                 var job = await _mediaService.CreateEncodeJobAsync(originalBlob, encodedBlob.GetName(), contentId, CancellationToken.None);
                 var message = new CompleteMediaEncodingQueueMessageDto
                 {
-                    JobIdentifier = job.Id,
+                    JobName = job.Name,
                     ContentId = contentId,
                     NewFileName = newFileName
                 };
@@ -57,12 +57,19 @@ namespace media_services_v3
                 await blob.SetContentDispositionAsync(contentDisposition);
                 var fileUri = blob.GetReadSharedAccessUrl("1.1.1.1");
                 Console.WriteLine($"Uploaded original at {fileUri}");
-                               
+
                 // External API call:
                 bool exit = false;
+                bool startedCopying = false;
                 do
                 {
-                    var progress = await _mediaService.GetEncodeProgressAsync(message.JobIdentifier, null);
+                    var progress = await _mediaService.GetEncodeProgressAsync(message.JobName, encodedBlob);
+                    Console.WriteLine($"Status {progress.Status}, progress {progress.ProgressPercentage}%");
+                    // Azure Function call:
+                    if (progress.Status == EncodeStatus.Copying && startedCopying == false)
+                    {
+                            await _mediaService.FinishEncodeJobAsync(message.JobName, message.ContentId, message.NewFileName, CancellationToken.None);
+                    }
                     if (progress.Status == EncodeStatus.Finished)
                     {
                         exit = true;
@@ -71,8 +78,6 @@ namespace media_services_v3
                 }
                 while (!exit);
 
-                // Azure Function call:
-                await _mediaService.FinishEncodeJobAsync(message.JobIdentifier, message.ContentId, message.NewFileName, CancellationToken.None);
 
             }
             catch (ApiErrorException ex)
