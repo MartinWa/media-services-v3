@@ -70,7 +70,7 @@ namespace media_services_v3
                     {
                             await _mediaService.FinishEncodeJobAsync(message.JobName, message.ContentId, message.NewFileName, CancellationToken.None);
                     }
-                    if (progress.Status == EncodeStatus.Finished)
+                    if (progress.Status == EncodeStatus.Finished || progress.Status == EncodeStatus.Error || progress.Status == EncodeStatus.NotFound)
                     {
                         exit = true;
                     }
