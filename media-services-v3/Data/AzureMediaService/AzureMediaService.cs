@@ -18,9 +18,12 @@ namespace media_services_v3.Data.AzureMediaService
         ConfigWrapper _settings;
         private const string EncodedFileExtensionn = ".mp4";
         private const string TransformName = "H264SingleBitrate720p";
-        public AzureMediaService(ConfigWrapper settings)
+        private readonly IAzureStorage _storage;
+
+        public AzureMediaService(ConfigWrapper settings, IAzureStorage storage)
         {
             _settings = settings;
+            _storage = storage;
         }
 
         public async Task<Job> CreateEncodeJobAsync(IZeroBlob original, string encodedFileName, int contentId, CancellationToken cancellationToken)
@@ -49,7 +52,10 @@ namespace media_services_v3.Data.AzureMediaService
             string outputAssetName = $"output-{uniqueness}";
 
 
-            Asset output = new Asset();
+            Asset output = new Asset
+            {
+
+            };
             var outPutAsset = client.Assets.CreateOrUpdate(_settings.ResourceGroup, _settings.AccountName, outputAssetName, output);
             JobOutput[] jobOutputs =
                 {
@@ -91,10 +97,56 @@ namespace media_services_v3.Data.AzureMediaService
             return job;
         }
 
-        public Task FinishEncodeJobAsync(string jobIdentifier, int contentId, string newFilename, CancellationToken cancellationToken)
+        public async Task FinishEncodeJobAsync(string jobName, int contentId, string newFilename, CancellationToken cancellationToken)
         {
-            // TODO Cleanup Or do that in FinishEncodeJobAsync
-            return Task.CompletedTask;
+            var clientCredential = new ClientCredential(_settings.AadClientId, _settings.AadSecret);
+            var credentials = await ApplicationTokenProvider.LoginSilentAsync(_settings.AadTenantId, clientCredential, ActiveDirectoryServiceSettings.Azure);
+            var client = new AzureMediaServicesClient(_settings.ArmEndpoint, credentials)
+            {
+                SubscriptionId = _settings.SubscriptionId
+            };
+            // Set the polling interval for long running operations to 2 seconds.
+            // The default value is 30 seconds for the .NET client SDK
+            client.LongRunningOperationRetryTimeout = 2;
+
+            var job = client.Jobs.Get(_settings.ResourceGroup, _settings.AccountName, TransformName, jobName);
+            if (job == null)
+            {
+                throw new InvalidOperationException($"No job with id {jobName} was found");
+            }
+            var encoded = _storage.GetContentContainer(contentId).GetContentBlob(newFilename);
+            if (job.State == JobState.Error)
+            {
+                var firstOutput = job.Outputs[0];
+                // TODO Look at old code, was it better messages?
+                var error = firstOutput == null ? string.Empty : string.Concat(firstOutput.Error.Details.Select(ed => ed.Message));
+                throw new Exception(error);
+            }
+
+            var output = job.Outputs.FirstOrDefault() as JobOutputAsset;
+            if (output == null)
+            {
+                throw new Exception("Asset not found");
+            }
+            var assetName = output.AssetName;
+            var asset = await client.Assets.GetAsync(_settings.ResourceGroup, _settings.AccountName, assetName);
+
+
+            var assetContainerSas = await client.Assets.ListContainerSasAsync(
+                _settings.ResourceGroup,
+                _settings.AccountName,
+                assetName,
+                permissions: AssetContainerPermission.Read,
+                expiryTime: DateTime.UtcNow.AddHours(1).ToUniversalTime());
+
+
+       
+
+
+            var assetContainer = _storage.GetContainer(asset.Container);
+            await encoded.CopyBlobAsync(assetContainer.GetBlob(encoded.GetName()));
+            await client.Assets.DeleteAsync(_settings.ResourceGroup, _settings.AccountName, assetName);
+            await client.Jobs.DeleteAsync(_settings.ResourceGroup, _settings.AccountName, TransformName, jobName);
         }
 
         public async Task<MediaEncodeProgressDto> GetEncodeProgressAsync(string jobName, IZeroBlob resultingFile)
@@ -105,6 +157,10 @@ namespace media_services_v3.Data.AzureMediaService
             {
                 SubscriptionId = _settings.SubscriptionId
             };
+            // Set the polling interval for long running operations to 2 seconds.
+            // The default value is 30 seconds for the .NET client SDK
+            client.LongRunningOperationRetryTimeout = 2;
+
             var job = client.Jobs.Get(_settings.ResourceGroup, _settings.AccountName, TransformName, jobName);
             if (job == null)
             {

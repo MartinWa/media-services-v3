@@ -27,8 +27,8 @@ namespace media_services_v3
 
 
             // Injection mocking
-            var _mediaService = new AzureMediaService(config);
             var _storage = new AzureStorage(null, new AzureBlobFactory(config.StorageConnectionString));
+            var _mediaService = new AzureMediaService(config, _storage);
 
             // Example specific code
             var fileGuid = Guid.NewGuid().ToString("N").ToLower();
