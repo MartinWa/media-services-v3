@@ -68,6 +68,10 @@ namespace media_services_v3
             get { return _config["StorageConnectionString"]; }
         }
 
+        public string TransformName        {
+            get { return _config["TransformName"]; }
+        }
+
         public List<string> SupportedVideoTypes
         {
             get
@@ -92,5 +96,6 @@ namespace media_services_v3
                                           ".wmv" };
             }
         }
+
     }
 }

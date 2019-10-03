@@ -28,7 +28,8 @@ namespace media_services_v3
 
             // Injection mocking
             var _storage = new AzureStorage(null, new AzureBlobFactory(config.StorageConnectionString));
-            var _mediaService = new AzureMediaService(config, _storage);
+            var _mediaServiceFactory = new AzureMediaServiceFactory(config);
+            var _mediaService = new AzureMediaService(config, _storage, await _mediaServiceFactory.GetAzureMediaServicesClientAsync());
 
             // Example specific code
             var fileGuid = Guid.NewGuid().ToString("N").ToLower();
@@ -41,7 +42,7 @@ namespace media_services_v3
             try
             {
                 var originalBackupFileName = $"{fileGuid}_original{fileExtension}";
-                newFileName = $"{fileGuid}{_mediaService.EncodedFileExtension()}";
+                newFileName = $"{fileGuid}{_mediaServiceFactory.GetEncodedFileExtension()}";
                 var originalBlob = _storage.GetContentContainer(contentId).GetContentBlob(originalBackupFileName);
                 await originalBlob.UploadFromStreamAsync(buffer);
                 var encodedBlob = _storage.GetContentContainer(contentId).GetContentBlob(newFileName);

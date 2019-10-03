@@ -15,29 +15,19 @@ namespace media_services_v3.Data.AzureMediaService
 {
     class AzureMediaService : IMediaService
     {
-        ConfigWrapper _settings;
-        private const string EncodedFileExtensionn = ".mp4";
-        private const string TransformName = "H264SingleBitrate720p";
+        private readonly ConfigWrapper _settings;
         private readonly IAzureStorage _storage;
+        private readonly IAzureMediaServicesClient _client;
 
-        public AzureMediaService(ConfigWrapper settings, IAzureStorage storage)
+        public AzureMediaService(ConfigWrapper settings, IAzureStorage storage, IAzureMediaServicesClient client)
         {
             _settings = settings;
             _storage = storage;
+            _client = client;
         }
 
         public async Task<Job> CreateEncodeJobAsync(IZeroBlob original, string encodedFileName, int contentId, CancellationToken cancellationToken)
         {
-            var clientCredential = new ClientCredential(_settings.AadClientId, _settings.AadSecret);
-            var credentials = await ApplicationTokenProvider.LoginSilentAsync(_settings.AadTenantId, clientCredential, ActiveDirectoryServiceSettings.Azure);
-            var client = new AzureMediaServicesClient(_settings.ArmEndpoint, credentials)
-            {
-                SubscriptionId = _settings.SubscriptionId
-            };
-            // Set the polling interval for long running operations to 2 seconds.
-            // The default value is 30 seconds for the .NET client SDK
-            client.LongRunningOperationRetryTimeout = 2;
-
             var extension = Path.GetExtension(original.GetName());
             if (extension == null || !_settings.SupportedVideoTypes.Contains(extension.ToLower()))
             {
@@ -49,24 +39,20 @@ namespace media_services_v3.Data.AzureMediaService
             string outputAssetName = $"output-{uniqueness}";
 
             var output = new Asset(description: $"{contentId}-{encodedFileName}");
-            var outPutAsset = await client.Assets.CreateOrUpdateAsync(_settings.ResourceGroup, _settings.AccountName, outputAssetName, output, cancellationToken);
+            var outPutAsset = await _client.Assets.CreateOrUpdateAsync(_settings.ResourceGroup, _settings.AccountName, outputAssetName, output, cancellationToken);
             JobOutput[] jobOutputs =
             {
                 new JobOutputAsset(outPutAsset.Name)
             };
-
-            // TODO Move transform to ARM template
-            await EnsureTransformExistsAsync(client, _settings.ResourceGroup, _settings.AccountName, TransformName, cancellationToken);
-
             var jobInput = new JobInputHttp
             {
                 Files = new[] { original.GetReadSharedAccessUrl("*") }
             };
             IDictionary<string, string> correlationData = null; // Add custom data sent with the job. Can then be used when processing it.
-            var job = await client.Jobs.CreateAsync(
+            var job = await _client.Jobs.CreateAsync(
                 _settings.ResourceGroup,
                 _settings.AccountName,
-                TransformName,
+                _settings.TransformName,
                 jobName,
                 new Job
                 {
@@ -74,80 +60,14 @@ namespace media_services_v3.Data.AzureMediaService
                     Outputs = jobOutputs,
                     CorrelationData = correlationData
                 }
-                ,cancellationToken);
+                , cancellationToken);
             return job;
         }
 
-        private static async Task<Transform> EnsureTransformExistsAsync(IAzureMediaServicesClient client, string resourceGroupName, string accountName, string transformName, CancellationToken cancellationToken)
-        {
-            var transform = await client.Transforms.GetAsync(resourceGroupName, accountName, transformName, cancellationToken);
-            if (transform == null)
-            {
 
-                // https://docs.microsoft.com/en-us/rest/api/media/transforms/createorupdate
-                TransformOutput[] outputs = new TransformOutput[]
-                {
-                  new TransformOutput(
-                        new StandardEncoderPreset
-                        {
-                            Codecs = new Codec[]
-                            {
-                                // AAC Audio layer for the audio encoding
-                                new AacAudio
-                                {
-                                    Channels= 2,
-                                    SamplingRate= 48000,
-                                    Bitrate= 128000,
-                                    Profile= AacAudioProfile.AacLc
-                                },
-                                // H264Video for the video encoding
-                               new H264Video
-                               {
-                                    Complexity =H264Complexity.Quality,
-
-                                    KeyFrameInterval = TimeSpan.FromSeconds(2),
-                                    Layers =  new H264Layer[]
-                                    {
-                                        new H264Layer
-                                        {
-                                            Bitrate = 1000000, // Units are in bits per second
-                                            Width= "1280",
-                                            Height= "720"
-                                        }
-                                    }
-                                }
-                            },
-                            Formats= new Format[]
-                            {
-                                new Mp4Format
-                                {
-                                    FilenamePattern="{Basename}{Extension}"
-                                }
-                            }
-                        },
-                        OnErrorType.StopProcessingJob,
-                        Priority.Normal
-                   )
-                };
-                string description = "A simple custom encoding transform with 2 MP4 bitrates";
-                transform = await client.Transforms.CreateOrUpdateAsync(resourceGroupName, accountName, transformName, outputs, description, cancellationToken);
-            }
-
-            return transform;
-        }
         public async Task FinishEncodeJobAsync(string jobName, int contentId, string newFilename, CancellationToken cancellationToken)
         {
-            var clientCredential = new ClientCredential(_settings.AadClientId, _settings.AadSecret);
-            var credentials = await ApplicationTokenProvider.LoginSilentAsync(_settings.AadTenantId, clientCredential, ActiveDirectoryServiceSettings.Azure);
-            var client = new AzureMediaServicesClient(_settings.ArmEndpoint, credentials)
-            {
-                SubscriptionId = _settings.SubscriptionId
-            };
-            // Set the polling interval for long running operations to 2 seconds.
-            // The default value is 30 seconds for the .NET client SDK
-            client.LongRunningOperationRetryTimeout = 2;
-
-            var job = await client.Jobs.GetAsync(_settings.ResourceGroup, _settings.AccountName, TransformName, jobName);
+            var job = await _client.Jobs.GetAsync(_settings.ResourceGroup, _settings.AccountName, _settings.TransformName, jobName);
             if (job == null)
             {
                 throw new InvalidOperationException($"No job with id {jobName} was found");
@@ -167,11 +87,11 @@ namespace media_services_v3.Data.AzureMediaService
                 throw new Exception("Asset not found");
             }
             var assetName = output.AssetName;
-            var asset = await client.Assets.GetAsync(_settings.ResourceGroup, _settings.AccountName, assetName);
+            var asset = await _client.Assets.GetAsync(_settings.ResourceGroup, _settings.AccountName, assetName);
             var assetContainer = _storage.GetContainer(asset.Container);
             await encoded.CopyBlobAsync(assetContainer.GetBlob(encoded.GetName()));
-            await client.Assets.DeleteAsync(_settings.ResourceGroup, _settings.AccountName, assetName);
-            await client.Jobs.DeleteAsync(_settings.ResourceGroup, _settings.AccountName, TransformName, jobName);
+            await _client.Assets.DeleteAsync(_settings.ResourceGroup, _settings.AccountName, assetName);
+            await _client.Jobs.DeleteAsync(_settings.ResourceGroup, _settings.AccountName, _settings.TransformName, jobName);
         }
 
         public async Task<MediaEncodeProgressDto> GetEncodeProgressAsync(string jobName, IZeroBlob resultingFile)
@@ -186,7 +106,7 @@ namespace media_services_v3.Data.AzureMediaService
             // The default value is 30 seconds for the .NET client SDK
             client.LongRunningOperationRetryTimeout = 2;
 
-            var job = await client.Jobs.GetAsync(_settings.ResourceGroup, _settings.AccountName, TransformName, jobName);
+            var job = await client.Jobs.GetAsync(_settings.ResourceGroup, _settings.AccountName, _settings.TransformName, jobName);
             if (job == null)
             {
                 return new MediaEncodeProgressDto
@@ -231,12 +151,6 @@ namespace media_services_v3.Data.AzureMediaService
                         Status = status
                     };
             }
-        }
-
-
-        public string EncodedFileExtension()
-        {
-            return EncodedFileExtensionn;
         }
 
         private static EncodeStatus ConvertToEncodeStatus(JobState state)

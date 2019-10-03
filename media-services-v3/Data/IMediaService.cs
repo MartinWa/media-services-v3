@@ -10,6 +10,5 @@ namespace media_services_v3.Data
         Task<Job> CreateEncodeJobAsync(IZeroBlob original, string encodedFileName, int contentId, CancellationToken cancellationToken);
         Task FinishEncodeJobAsync(string jobIdentifier, int contentId, string newFilename,CancellationToken cancellationToken);
         Task<MediaEncodeProgressDto> GetEncodeProgressAsync(string jobIdentifier, IZeroBlob resultingFile);
-        string EncodedFileExtension();
     }
 }
