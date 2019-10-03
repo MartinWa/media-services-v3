@@ -11,7 +11,6 @@ namespace media_services_v3.Data.AzureMediaService
     public class AzureMediaServiceFactory
     {
         private const string EncodedFileExtension = ".mp4";
-        private const string TransformName = "H264SingleBitrate720p";
         private readonly ConfigWrapper _settings;
 
         public AzureMediaServiceFactory(ConfigWrapper settings)
@@ -36,7 +35,7 @@ namespace media_services_v3.Data.AzureMediaService
         public async Task<Transform> EnsureTransformExistsAsync(CancellationToken cancellationToken)
         {
             var client = await GetAzureMediaServicesClientAsync();
-            var transform = await client.Transforms.GetAsync(_settings.ResourceGroup, _settings.AccountName, _settings.TransformName, cancellationToken);
+            var transform = await client.Transforms.GetAsync(_settings.ResourceGroup, _settings.AccountName, _settings.MediaServicesTransform, cancellationToken);
             if (transform == null)
             {
                 // https://docs.microsoft.com/en-us/rest/api/media/transforms/createorupdate
@@ -85,7 +84,7 @@ namespace media_services_v3.Data.AzureMediaService
                    )
                 };
                 string description = "A simple custom encoding transform with 2 MP4 bitrates";
-                transform = await client.Transforms.CreateOrUpdateAsync(_settings.ResourceGroup, _settings.AccountName, _settings.TransformName, outputs, description, cancellationToken);
+                transform = await client.Transforms.CreateOrUpdateAsync(_settings.ResourceGroup, _settings.AccountName, _settings.MediaServicesTransform, outputs, description, cancellationToken);
             }
             return transform;
         }

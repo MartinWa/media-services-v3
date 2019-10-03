@@ -52,7 +52,7 @@ namespace media_services_v3.Data.AzureMediaService
             var job = await _client.Jobs.CreateAsync(
                 _settings.ResourceGroup,
                 _settings.AccountName,
-                _settings.TransformName,
+                _settings.MediaServicesTransform,
                 jobName,
                 new Job
                 {
@@ -67,7 +67,7 @@ namespace media_services_v3.Data.AzureMediaService
 
         public async Task FinishEncodeJobAsync(string jobName, int contentId, string newFilename, CancellationToken cancellationToken)
         {
-            var job = await _client.Jobs.GetAsync(_settings.ResourceGroup, _settings.AccountName, _settings.TransformName, jobName);
+            var job = await _client.Jobs.GetAsync(_settings.ResourceGroup, _settings.AccountName, _settings.MediaServicesTransform, jobName);
             if (job == null)
             {
                 throw new InvalidOperationException($"No job with id {jobName} was found");
@@ -91,7 +91,7 @@ namespace media_services_v3.Data.AzureMediaService
             var assetContainer = _storage.GetContainer(asset.Container);
             await encoded.CopyBlobAsync(assetContainer.GetBlob(encoded.GetName()));
             await _client.Assets.DeleteAsync(_settings.ResourceGroup, _settings.AccountName, assetName);
-            await _client.Jobs.DeleteAsync(_settings.ResourceGroup, _settings.AccountName, _settings.TransformName, jobName);
+            await _client.Jobs.DeleteAsync(_settings.ResourceGroup, _settings.AccountName, _settings.MediaServicesTransform, jobName);
         }
 
         public async Task<MediaEncodeProgressDto> GetEncodeProgressAsync(string jobName, IZeroBlob resultingFile)
@@ -106,7 +106,7 @@ namespace media_services_v3.Data.AzureMediaService
             // The default value is 30 seconds for the .NET client SDK
             client.LongRunningOperationRetryTimeout = 2;
 
-            var job = await client.Jobs.GetAsync(_settings.ResourceGroup, _settings.AccountName, _settings.TransformName, jobName);
+            var job = await client.Jobs.GetAsync(_settings.ResourceGroup, _settings.AccountName, _settings.MediaServicesTransform, jobName);
             if (job == null)
             {
                 return new MediaEncodeProgressDto

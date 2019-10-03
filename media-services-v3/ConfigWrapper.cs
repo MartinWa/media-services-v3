@@ -68,8 +68,9 @@ namespace media_services_v3
             get { return _config["StorageConnectionString"]; }
         }
 
-        public string TransformName        {
-            get { return _config["TransformName"]; }
+        public string MediaServicesTransform
+        {
+            get { return _config["MediaServicesTransform"]; }
         }
 
         public List<string> SupportedVideoTypes
