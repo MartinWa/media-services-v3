@@ -22,7 +22,7 @@ namespace media_services_v3.Data.AzureMediaService
         {
             var clientCredential = new ClientCredential(_settings.AadClientId, _settings.AadSecret);
             var credentials = await ApplicationTokenProvider.LoginSilentAsync(_settings.AadTenantId, clientCredential, ActiveDirectoryServiceSettings.Azure);
-            var client = new AzureMediaServicesClient(_settings.ArmEndpoint, credentials)
+            var client = new AzureMediaServicesClient(credentials)
             {
                 SubscriptionId = _settings.SubscriptionId
             };

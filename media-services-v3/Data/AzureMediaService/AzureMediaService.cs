@@ -2,8 +2,6 @@
 using media_services_v3.Common.Enums;
 using Microsoft.Azure.Management.Media;
 using Microsoft.Azure.Management.Media.Models;
-using Microsoft.IdentityModel.Clients.ActiveDirectory;
-using Microsoft.Rest.Azure.Authentication;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -91,17 +89,7 @@ namespace media_services_v3.Data.AzureMediaService
 
         public async Task<MediaEncodeProgressDto> GetEncodeProgressAsync(string jobName, IZeroBlob resultingFile)
         {
-            var clientCredential = new ClientCredential(_settings.AadClientId, _settings.AadSecret);
-            var credentials = await ApplicationTokenProvider.LoginSilentAsync(_settings.AadTenantId, clientCredential, ActiveDirectoryServiceSettings.Azure);
-            var client = new AzureMediaServicesClient(_settings.ArmEndpoint, credentials)
-            {
-                SubscriptionId = _settings.SubscriptionId
-            };
-            // Set the polling interval for long running operations to 2 seconds.
-            // The default value is 30 seconds for the .NET client SDK
-            client.LongRunningOperationRetryTimeout = 2;
-
-            var job = await client.Jobs.GetAsync(_settings.ResourceGroup, _settings.AccountName, _settings.MediaServicesTransform, jobName);
+            var job = await _client.Jobs.GetAsync(_settings.ResourceGroup, _settings.AccountName, _settings.MediaServicesTransform, jobName);
             if (job == null)
             {
                 return new MediaEncodeProgressDto
